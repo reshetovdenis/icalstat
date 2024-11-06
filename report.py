@@ -16,10 +16,11 @@ import threading
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill
-from openpyxl.chart import BarChart, Reference
+from openpyxl.chart import BarChart, Reference, PieChart
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.chart.axis import ChartLines
+from openpyxl.drawing.fill import ColorChoice
 
 # Helper function to format dates as YYYY-MM-DD
 def format_date(date_obj):
@@ -145,7 +146,7 @@ class CalendarSummaryReport(NSObject):
         # Create a new Workbook
         wb = Workbook()
         ws = wb.active
-        ws.title = "Calendar Summary"
+        ws.title = "Data"
 
         # Apply bold font to headers
         bold_font = Font(bold=True)
@@ -186,8 +187,11 @@ class CalendarSummaryReport(NSObject):
         # Enable filters on the header row
         ws.auto_filter.ref = ws.dimensions
 
-        # Add the chart sheet
-        self.add_chart_sheet(wb)
+        # Add the bar chart sheet
+        self.add_bar_chart_sheet(wb)
+
+        # Add the pie chart sheet
+        self.add_pie_chart_sheet(wb)
 
         # Define the XLSX file path
         if output_path is None:
@@ -201,9 +205,9 @@ class CalendarSummaryReport(NSObject):
         except Exception as e:
             print(f"Failed to write the XLSX file. Error: {e}")
 
-    def add_chart_sheet(self, wb):
-        # Create a new sheet for the chart
-        chart_ws = wb.create_sheet(title="Calendar Chart")
+    def add_bar_chart_sheet(self, wb):
+        # Create a new sheet for the bar chart
+        chart_ws = wb.create_sheet(title="By day")
 
         # Define headers for chart data
         chart_headers = ['Date'] + list(set(record['calendarName'] for record in self.summary_data))
@@ -222,7 +226,7 @@ class CalendarSummaryReport(NSObject):
 
         # Write data to the chart sheet
         for date, data in sorted(chart_data.items()):
-            row = [date] + [data[cal] for cal in chart_headers[1:]]
+            row = [date] + [data.get(cal, 0) for cal in chart_headers[1:]]
             chart_ws.append(row)
 
         # Create the bar chart
@@ -241,22 +245,41 @@ class CalendarSummaryReport(NSObject):
         chart.shape = 4
         chart.x_axis.delete = False
         chart.y_axis.delete = False
-        chart.y_axis.majorGridlines=ChartLines(spPr=GraphicalProperties(ln=LineProperties(prstDash='dot')))
+        chart.y_axis.majorGridlines = ChartLines(spPr=GraphicalProperties(ln=LineProperties(prstDash='dot')))
 
         # Apply colors to the series based on the calendar hex colors
         for i, series in enumerate(chart.series, start=1):
-            calendar_name = chart_headers[i]
-            if calendar_name in self.calendar_colors:
-                hex_color = self.calendar_colors[calendar_name]
-                # Convert hex color to RGB for openpyxl
-                r = hex_color[:2]
-                g = hex_color[2:4]
-                b = hex_color[4:]
-                rgb_color = f"{r}{g}{b}"
-                series.graphicalProperties.solidFill = rgb_color
+            if i - 1 < len(chart_headers) - 1:
+                calendar_name = chart_headers[i]
+                if calendar_name in self.calendar_colors:
+                    hex_color = self.calendar_colors[calendar_name]
+                    # Convert hex color to RGB for openpyxl
+                    r = hex_color[:2]
+                    g = hex_color[2:4]
+                    b = hex_color[4:]
+                    rgb_color = f"{r}{g}{b}"
+                    series.graphicalProperties.solidFill = rgb_color
 
         # Add the chart to the chart sheet
         chart_ws.add_chart(chart, "E5")
+
+    def add_pie_chart_sheet(self, wb):
+        # Create a new sheet for the pie chart
+        pie_chart_ws = wb.create_sheet(title="Total")
+
+        # Aggregate total duration per calendar across all dates
+        total_per_calendar = {}
+        for record in self.summary_data:
+            calendar = record['calendarName']
+            duration = record['totalDuration']
+            total_per_calendar[calendar] = total_per_calendar.get(calendar, 0) + duration
+
+        # Write headers
+        pie_chart_ws.append(['Calendar', 'Total Duration Hours'])
+
+        # Write aggregated data
+        for calendar, total_duration in total_per_calendar.items():
+            pie_chart_ws.append([calendar, total_duration])
 
     def python_date_to_nsdate(self, py_date):
         # Convert Python datetime to NSDate
