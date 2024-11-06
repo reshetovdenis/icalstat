@@ -28,4 +28,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 Run the script from the terminal with optional arguments to specify the number of days and output path:
 
 ```bash
-python calendar_summary_report.py [DAYS] [-o OUTPUT]
+python report.py [DAYS] [-o OUTPUT]
