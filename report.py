@@ -224,15 +224,21 @@ class CalendarSummaryReport(NSObject):
 
         # Create the bar chart
         chart = BarChart()
-        chart.title = "Calendar Hours per Day"
-        chart.x_axis.title = "Date"
-        chart.y_axis.title = "Hours"
+        chart.type = "col"
+        chart.style = 12
+        chart.grouping = "stacked"
+        chart.overlap = 100
+        chart.legend.position = 't'
 
         # Define the data and categories for the chart
         data = Reference(chart_ws, min_col=2, max_col=len(chart_headers), min_row=1, max_row=len(chart_data) + 1)
         categories = Reference(chart_ws, min_col=1, min_row=2, max_row=len(chart_data) + 1)
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(categories)
+        chart.shape = 4
+        chart.x_axis.delete = False
+        chart.y_axis.delete = False
+        chart.y_axis.majorGridlines = None
 
         # Apply colors to the series based on the calendar hex colors
         for i, series in enumerate(chart.series, start=1):
