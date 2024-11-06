@@ -17,6 +17,9 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill
 from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.drawing.line import LineProperties
+from openpyxl.chart.axis import ChartLines
 
 # Helper function to format dates as YYYY-MM-DD
 def format_date(date_obj):
@@ -238,7 +241,7 @@ class CalendarSummaryReport(NSObject):
         chart.shape = 4
         chart.x_axis.delete = False
         chart.y_axis.delete = False
-        chart.y_axis.majorGridlines = None
+        chart.y_axis.majorGridlines=ChartLines(spPr=GraphicalProperties(ln=LineProperties(prstDash='dot')))
 
         # Apply colors to the series based on the calendar hex colors
         for i, series in enumerate(chart.series, start=1):
