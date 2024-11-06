@@ -287,11 +287,11 @@ def parse_arguments():
         description="Generate a summary report of Apple Calendar events."
     )
     parser.add_argument(
-        'last_days',
+        'days',
         type=int,
         nargs='?',
-        default=0,
-        help='Number of past days to include in the report (default: 0, which means today).'
+        default=1,
+        help='Number of days to include in the report (default: 1, which means today).'
     )
     parser.add_argument(
         '-o', '--output',
@@ -303,13 +303,12 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
-    last_days = args.last_days
+    last_days = args.days - 1
     output_path = args.output
 
     # Validate last_days
     if last_days < 0:
-        print("Error: last_days must be a non-negative integer.")
-        sys.exit(1)
+        last_days = 0
 
     report = CalendarSummaryReport.alloc().init()
 
