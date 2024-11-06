@@ -234,6 +234,18 @@ class CalendarSummaryReport(NSObject):
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(categories)
 
+        # Apply colors to the series based on the calendar hex colors
+        for i, series in enumerate(chart.series, start=1):
+            calendar_name = chart_headers[i]
+            if calendar_name in self.calendar_colors:
+                hex_color = self.calendar_colors[calendar_name]
+                # Convert hex color to RGB for openpyxl
+                r = hex_color[:2]
+                g = hex_color[2:4]
+                b = hex_color[4:]
+                rgb_color = f"{r}{g}{b}"
+                series.graphicalProperties.solidFill = rgb_color
+
         # Add the chart to the chart sheet
         chart_ws.add_chart(chart, "E5")
 
