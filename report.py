@@ -144,7 +144,7 @@ class CalendarSummaryReport(NSObject):
         for record in self.summary_data:
             record['totalDuration'] = round_number(record['totalDuration'], 3)
 
-    def export_to_xlsx(self, output_path=None):
+    def export_to_xlsx(self, days_in_period, output_path=None):
         # Define headers
         headers = ['Date', 'Calendar', 'Total Duration Hours']
 
@@ -196,7 +196,7 @@ class CalendarSummaryReport(NSObject):
         self.add_bar_chart_sheet(wb)
 
         # Add the pie chart sheet
-        self.add_pie_chart_sheet(wb)
+        self.add_pie_chart_sheet(wb, days_in_period)
 
         # Define the XLSX file path
         if output_path is None:
@@ -268,7 +268,7 @@ class CalendarSummaryReport(NSObject):
         # Add the chart to the chart sheet
         chart_ws.add_chart(chart, "E5")
 
-    def add_pie_chart_sheet(self, wb):
+    def add_pie_chart_sheet(self, wb, days_in_period):
         # Create a new sheet for the pie chart
         pie_chart_ws = wb.create_sheet(title="Total")
 
@@ -280,11 +280,15 @@ class CalendarSummaryReport(NSObject):
             total_per_calendar[calendar] = total_per_calendar.get(calendar, 0) + duration
 
         # Write headers
-        pie_chart_ws.append(['Calendar', 'Total Duration Hours'])
+        pie_chart_ws.append(['Calendar', 'Total Duration Hours', 'Hours per Day'])
 
         # Write aggregated data
         for calendar, total_duration in total_per_calendar.items():
-            pie_chart_ws.append([calendar, total_duration])
+            mean_duration = total_duration / days_in_period
+            pie_chart_ws.append([calendar, total_duration, mean_duration])
+        for row in pie_chart_ws.iter_rows(min_row=2, min_col=3, max_col=3):
+            for cell in row:
+                cell.number_format = '0.00'
 
     def python_date_to_nsdate(self, py_date):
         # Convert Python datetime to NSDate
@@ -341,13 +345,17 @@ def main():
     if last_days < 0:
         last_days = 0
 
+    days_in_period = last_days
+    if days_in_period == 0:
+        days_in_period = 1
+
     report = CalendarSummaryReport.alloc().init()
 
     if not report.request_access():
         sys.exit(1)
 
     report.generate_report(last_days=last_days)
-    report.export_to_xlsx(output_path=output_path)
+    report.export_to_xlsx(days_in_period=days_in_period, output_path=output_path)
 
 if __name__ == "__main__":
     main()
