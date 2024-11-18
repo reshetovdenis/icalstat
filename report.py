@@ -82,6 +82,11 @@ class CalendarSummaryReport(NSObject):
         start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=0)
 
+        if last_days > 0:
+            start_date = (end_date - timedelta(days=last_days)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = end_date - timedelta(days=1)
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=0)
+
         # Convert to NSDate
         start_nsdate = self.python_date_to_nsdate(start_date)
         end_nsdate = self.python_date_to_nsdate(end_date)
@@ -329,7 +334,7 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
-    last_days = args.days - 1
+    last_days = args.days
     output_path = args.output
 
     # Validate last_days
