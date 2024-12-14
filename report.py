@@ -22,13 +22,16 @@ from openpyxl.drawing.line import LineProperties
 from openpyxl.chart.axis import ChartLines
 from openpyxl.drawing.fill import ColorChoice
 
+
 # Helper function to format dates as YYYY-MM-DD
 def format_date(date_obj):
     return date_obj.strftime("%Y-%m-%d")
 
+
 # Helper function to round a number to specified decimal places
 def round_number(n, decimal_places):
     return round(n, decimal_places)
+
 
 # Handler to find a record by date and calendar
 def find_record(summary_data, search_date, search_calendar):
@@ -37,6 +40,7 @@ def find_record(summary_data, search_date, search_calendar):
             return record
     return None
 
+
 class CalendarSummaryReport(NSObject):
     def init(self):
         self = objc.super(CalendarSummaryReport, self).init()
@@ -44,23 +48,19 @@ class CalendarSummaryReport(NSObject):
             return None
         self.store = EKEventStore.alloc().init()
         self.summary_data = []
+        self.detailed_data = []  # Added to track individual event data
         self.access_event = threading.Event()  # For synchronization
         self.access_granted = False
         self.calendar_colors = {}  # Dictionary to store calendar colors
         return self
 
     def request_access(self):
-        # Call authorizationStatusForEntityType_ on EKEventStore class
         authorization_status = EKEventStore.authorizationStatusForEntityType_(EKEntityTypeEvent)
-
         if authorization_status == EKAuthorizationStatusNotDetermined:
-            # Request access
             self.store.requestAccessToEntityType_completion_(EKEntityTypeEvent, self.access_callback)
-            # Run the run loop until access is granted or denied
             timeout = 10  # seconds
             end_time = datetime.now() + timedelta(seconds=timeout)
             while not self.access_event.is_set() and datetime.now() < end_time:
-                # Run the run loop for a short period to allow callback processing
                 NSRunLoop.currentRunLoop().runMode_beforeDate_('default', NSDate.dateWithTimeIntervalSinceNow_(0.1))
             return self.access_granted
         elif authorization_status == EKAuthorizationStatusAuthorized:
@@ -105,10 +105,6 @@ class CalendarSummaryReport(NSObject):
             hex_color = self.nscolor_to_hex(ns_color)
             self.calendar_colors[cal_name] = hex_color
 
-        # Collect events
-        for cal in calendars:
-            cal_name = cal.title()
-            # Fetch events within the date range
             predicate = self.store.predicateForEventsWithStartDate_endDate_calendars_(
                 start_nsdate, end_nsdate, [cal]
             )
@@ -118,50 +114,40 @@ class CalendarSummaryReport(NSObject):
                 evt_start = event.startDate()
                 evt_end = event.endDate()
                 duration_seconds = evt_end.timeIntervalSinceDate_(evt_start)
-                duration_hours = duration_seconds / 3600  # Convert to hours
+                duration_hours = duration_seconds / 3600
+                evt_date = format_date(self.nsdate_to_python_date(evt_start))
+                event_name = event.title() if event.title() else "Unnamed Event"
 
-                # Format the event date as YYYY-MM-DD
-                evt_start_py = self.nsdate_to_python_date(evt_start)
-                evt_date = format_date(evt_start_py)
+                self.detailed_data.append({
+                    'eventDate': evt_date,
+                    'calendarName': cal_name,
+                    'eventName': event_name,
+                    'totalDuration': duration_hours,
+                })
 
-                # Find existing record
                 existing_record = find_record(self.summary_data, evt_date, cal_name)
-
                 if existing_record:
                     existing_record['totalDuration'] += duration_hours
                 else:
-                    new_record = {
+                    self.summary_data.append({
                         'eventDate': evt_date,
                         'calendarName': cal_name,
-                        'totalDuration': duration_hours
-                    }
-                    self.summary_data.append(new_record)
+                        'totalDuration': duration_hours,
+                    })
 
-        # Sort the summary_data by eventDate in ascending order
         self.summary_data.sort(key=lambda x: x['eventDate'])
-
-        # Round the totalDuration
-        for record in self.summary_data:
-            record['totalDuration'] = round_number(record['totalDuration'], 3)
+        self.detailed_data.sort(key=lambda x: (x['calendarName'], x['eventDate']))
 
     def export_to_xlsx(self, days_in_period, output_path=None):
-        # Define headers
         headers = ['Date', 'Calendar', 'Total Duration Hours']
-
-        # Create a new Workbook
         wb = Workbook()
         ws = wb.active
         ws.title = "Data"
 
-        # Apply bold font to headers
         bold_font = Font(bold=True)
-
-        # Write headers in row 1
         for col_num, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_num, value=header)
-            cell.font = bold_font
+            ws.cell(row=1, column=col_num, value=header).font = bold_font
 
-        # Write data starting from row 2
         for row_num, record in enumerate(self.summary_data, 2):
             ws.cell(row=row_num, column=1, value=record['eventDate'])
             ws.cell(row=row_num, column=2, value=record['calendarName'])
@@ -175,66 +161,73 @@ class CalendarSummaryReport(NSObject):
                 for col in range(1, 4):  # Assuming 3 columns
                     ws.cell(row=row_num, column=col).fill = fill
 
-        # Adjust column widths for better readability
-        for column in ws.columns:
-            max_length = 0
-            column_letter = get_column_letter(column[0].column)
-            for cell in column:
-                try:
-                    cell_length = len(str(cell.value))
-                    if cell_length > max_length:
-                        max_length = cell_length
-                except:
-                    pass
-            adjusted_width = (max_length + 2)
-            ws.column_dimensions[column_letter].width = adjusted_width
-
-        # Enable filters on the header row
-        ws.auto_filter.ref = ws.dimensions
-
-        # Add the bar chart sheet
+        # Add bar chart sheet
         self.add_bar_chart_sheet(wb)
 
-        # Add the pie chart sheet
-        self.add_pie_chart_sheet(wb, days_in_period)
+        # Add calendar-specific tabs
+        self.add_calendar_tabs(wb, days_in_period)
 
-        # Define the XLSX file path
-        if output_path is None:
-            desktop_path = os.path.join(os.path.expanduser("~/Desktop"), "Calendar_Summary_Report.xlsx")
-        else:
-            desktop_path = output_path
+        output_path = output_path or os.path.join(os.path.expanduser("~/Desktop"), "Calendar_Summary_Report.xlsx")
+        wb.save(output_path)
+        print(f"Report saved to {output_path}")
 
-        try:
-            wb.save(desktop_path)
-            print(f"Summary report generated at '{desktop_path}'")
-        except Exception as e:
-            print(f"Failed to write the XLSX file. Error: {e}")
+    def add_calendar_tabs(self, wb, days_in_period):
+        events_by_calendar = {}
+        for event in self.detailed_data:
+            calendar_name = event['calendarName']
+            if calendar_name not in events_by_calendar:
+                events_by_calendar[calendar_name] = []
+            events_by_calendar[calendar_name].append(event)
+
+        for calendar_name, events in events_by_calendar.items():
+            aggregated_data = {}
+            for event in events:
+                event_name = event['eventName']
+                if event_name not in aggregated_data:
+                    aggregated_data[event_name] = 0
+                aggregated_data[event_name] += event['totalDuration']
+
+            ws = wb.create_sheet(title=calendar_name[:31])
+            headers = ["Event Name", "Total Duration Hours", "Hours per Day"]
+            for col_num, header in enumerate(headers, 1):
+                ws.cell(row=1, column=col_num, value=header).font = Font(bold=True)
+
+            for row_num, (event_name, total_duration) in enumerate(aggregated_data.items(), 2):
+                ws.cell(row=row_num, column=1, value=event_name)
+                ws.cell(row=row_num, column=2, value=round(total_duration, 2))
+                ws.cell(row=row_num, column=3, value=round(total_duration / days_in_period, 2))
+
+            for column in ws.columns:
+                max_length = 0
+                column_letter = get_column_letter(column[0].column)
+                for cell in column:
+                    try:
+                        cell_length = len(str(cell.value))
+                        if cell_length > max_length:
+                            max_length = cell_length
+                    except:
+                        pass
+                    adjusted_width = max_length + 2
+                    ws.column_dimensions[column_letter].width = adjusted_width
 
     def add_bar_chart_sheet(self, wb):
-        # Create a new sheet for the bar chart
         chart_ws = wb.create_sheet(title="By day")
-
-        # Define headers for chart data
         chart_headers = ['Date'] + list(set(record['calendarName'] for record in self.summary_data))
         chart_ws.append(chart_headers)
 
-        # Organize data by date and calendar for the chart
         chart_data = {}
         for record in self.summary_data:
             date = record['eventDate']
             calendar_name = record['calendarName']
             duration = record['totalDuration']
-            
             if date not in chart_data:
                 chart_data[date] = {cal: 0 for cal in chart_headers[1:]}
             chart_data[date][calendar_name] += duration
 
-        # Write data to the chart sheet
         for date, data in sorted(chart_data.items()):
             row = [date] + [data.get(cal, 0) for cal in chart_headers[1:]]
             chart_ws.append(row)
 
-        # Create the bar chart
         chart = BarChart()
         chart.type = "col"
         chart.style = 12
@@ -242,7 +235,6 @@ class CalendarSummaryReport(NSObject):
         chart.overlap = 100
         chart.legend.position = 't'
 
-        # Define the data and categories for the chart
         data = Reference(chart_ws, min_col=2, max_col=len(chart_headers), min_row=1, max_row=len(chart_data) + 1)
         categories = Reference(chart_ws, min_col=1, min_row=2, max_row=len(chart_data) + 1)
         chart.add_data(data, titles_from_data=True)
@@ -268,54 +260,25 @@ class CalendarSummaryReport(NSObject):
         # Add the chart to the chart sheet
         chart_ws.add_chart(chart, "E5")
 
-    def add_pie_chart_sheet(self, wb, days_in_period):
-        # Create a new sheet for the pie chart
-        pie_chart_ws = wb.create_sheet(title="Total")
-
-        # Aggregate total duration per calendar across all dates
-        total_per_calendar = {}
-        for record in self.summary_data:
-            calendar = record['calendarName']
-            duration = record['totalDuration']
-            total_per_calendar[calendar] = total_per_calendar.get(calendar, 0) + duration
-
-        # Write headers
-        pie_chart_ws.append(['Calendar', 'Total Duration Hours', 'Hours per Day'])
-
-        # Write aggregated data
-        for calendar, total_duration in total_per_calendar.items():
-            mean_duration = total_duration / days_in_period
-            pie_chart_ws.append([calendar, total_duration, mean_duration])
-        for row in pie_chart_ws.iter_rows(min_row=2, min_col=3, max_col=3):
-            for cell in row:
-                cell.number_format = '0.00'
-
     def python_date_to_nsdate(self, py_date):
-        # Convert Python datetime to NSDate
         epoch = datetime(2001, 1, 1)
         delta = py_date - epoch
         return NSDate.dateWithTimeIntervalSinceReferenceDate_(delta.total_seconds())
 
     def nsdate_to_python_date(self, ns_date):
-        # Convert NSDate to Python datetime
         epoch = datetime(2001, 1, 1)
         interval = ns_date.timeIntervalSinceReferenceDate()
         return epoch + timedelta(seconds=interval)
 
     def nscolor_to_hex(self, ns_color):
-        """
-        Convert NSColor to Hex string in RRGGBB format.
-        """
         try:
-            # Directly access RGB components without converting color space
             r = int(ns_color.redComponent() * 255)
             g = int(ns_color.greenComponent() * 255)
             b = int(ns_color.blueComponent() * 255)
             return f"{r:02X}{g:02X}{b:02X}"
-        except Exception as e:
-            print(f"Error converting NSColor to hex: {e}")
-            # Return default color (light gray) in case of error
+        except Exception:
             return "D3D3D3"
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -336,18 +299,13 @@ def parse_arguments():
     )
     return parser.parse_args()
 
+
 def main():
     args = parse_arguments()
     last_days = args.days
     output_path = args.output
 
-    # Validate last_days
-    if last_days < 0:
-        last_days = 0
-
-    days_in_period = last_days
-    if days_in_period == 0:
-        days_in_period = 1
+    days_in_period = max(last_days, 1)
 
     report = CalendarSummaryReport.alloc().init()
 
@@ -356,6 +314,7 @@ def main():
 
     report.generate_report(last_days=last_days)
     report.export_to_xlsx(days_in_period=days_in_period, output_path=output_path)
+
 
 if __name__ == "__main__":
     main()
