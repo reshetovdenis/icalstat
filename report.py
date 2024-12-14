@@ -121,7 +121,7 @@ class CalendarSummaryReport(NSObject):
                 self.detailed_data.append({
                     'eventDate': evt_date,
                     'calendarName': cal_name,
-                    'eventName': event_name,
+                    'eventName': event_name.strip(),
                     'totalDuration': duration_hours,
                 })
 
